@@ -58,7 +58,7 @@ url_tickets = "https://api.movidesk.com/public/v1/tickets"
 
 params_mes = {
     "token": MOVIDESK_TOKEN,
-    "$select": "id,subject,status,category,createdDate,urgency,clients,baseStatus",
+    "$select": "id,subject,status,justification,category,createdDate,urgency,clients,baseStatus",
     "$expand": "clients($expand=organization)",
     "$filter": f"createdDate ge {primeiro_dia_mes}T00:00:00.00z"
 }
@@ -106,7 +106,7 @@ ranking_clientes_bugs = clientes_bugs_contador.most_common()
 
 params_abertos = {
     "token": MOVIDESK_TOKEN,
-    "$select": "id,subject,status,category,createdDate,urgency,clients,baseStatus",
+    "$select": "id,subject,status,justification,category,createdDate,urgency,clients,baseStatus",
     "$expand": "clients($expand=organization)"
 }
 
@@ -189,7 +189,7 @@ html_content = f"""
 <style>
 body {{ margin: 0; padding: 0; background-color: #f4f6f8; font-family: Arial, sans-serif; color: #202124; }}
 .wrapper {{ width: 100%; padding: 30px 0; }}
-.container {{ max-width: 1100px; margin: 0 auto; background: #ffffff; border-radius: 14px; overflow: hidden; box-shadow: 0 3px 14px rgba(0,0,0,0.07); }}
+.container {{ max-width: 1250px; margin: 0 auto; background: #ffffff; border-radius: 14px; overflow: hidden; box-shadow: 0 3px 14px rgba(0,0,0,0.07); }}
 .header {{ padding: 28px 32px; border-bottom: 1px solid #e8eaed; background: #3b1443; color: #ffffff; }}
 .eyebrow {{ font-size: 12px; font-weight: bold; letter-spacing: 1.2px; color: #d8b4e2; text-transform: uppercase; margin-bottom: 8px; }}
 .title {{ margin: 0; font-size: 24px; color: #ffffff; }}
@@ -257,6 +257,8 @@ ul li {{ margin-bottom: 6px; }}
     <th>ORGANIZAÇÃO</th>
     <th>ASSUNTO</th>
     <th>CATEGORIA</th>
+    <th>STATUS</th>
+    <th>JUSTIFICATIVA</th>
     <th>ABERTO EM</th>
 </tr>
 </thead>
@@ -266,7 +268,7 @@ ul li {{ margin-bottom: 6px; }}
 if not bugs_alta_prioridade:
     html_content += """
 <tr>
-    <td colspan="6" style="text-align: center; padding: 25px; color: #9ca3af;">
+    <td colspan="8" style="text-align: center; padding: 25px; color: #9ca3af;">
         Nenhum bug de alta prioridade ou urgente encontrado no período do mês.
     </td>
 </tr>
@@ -279,7 +281,9 @@ else:
     <td>{urgency_badge(t.get('urgency'))}</td>
     <td style="font-weight: bold; color: #1f2937;">{esc(t.get('organizacao_nome'))}</td>
     <td>{esc(t.get('subject'))}</td>
-    <td>{esc(t.get('category'))}</td>
+    <td>{esc(t.get('category') or '-')}</td>
+    <td>{esc(t.get('status'))}</td>
+    <td>{esc(t.get('justification') or '-')}</td>
     <td>{format_date(t.get('createdDate'))}</td>
 </tr>
 """
@@ -298,7 +302,9 @@ html_content += f"""
     <th>TEMPO EM ABERTO</th>
     <th>ORGANIZAÇÃO</th>
     <th>ASSUNTO</th>
+    <th>CATEGORIA</th>
     <th>STATUS</th>
+    <th>JUSTIFICATIVA</th>
     <th>ABERTO EM</th>
 </tr>
 </thead>
@@ -308,7 +314,7 @@ html_content += f"""
 if not tickets_em_aberto:
     html_content += """
 <tr>
-    <td colspan="6" style="text-align: center; padding: 25px; color: #9ca3af;">
+    <td colspan="8" style="text-align: center; padding: 25px; color: #9ca3af;">
         Nenhum ticket em aberto no momento.
     </td>
 </tr>
@@ -321,7 +327,9 @@ else:
     <td><span style="background: #fff6df; color: #a15c00; padding: 3px 6px; border-radius: 4px; font-weight: bold;">{t.get('dias_aberto')} dia(s)</span></td>
     <td style="font-weight: bold; color: #1f2937;">{esc(t.get('organizacao_nome'))}</td>
     <td>{esc(t.get('subject'))}</td>
+    <td>{esc(t.get('category') or '-')}</td>
     <td>{esc(t.get('status'))}</td>
+    <td>{esc(t.get('justification') or '-')}</td>
     <td>{format_date(t.get('createdDate'))}</td>
 </tr>
 """
