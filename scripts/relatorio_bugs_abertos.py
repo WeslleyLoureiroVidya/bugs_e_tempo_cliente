@@ -46,21 +46,15 @@ if missing_variables:
 if not EMAIL_RECIPIENTS:
     raise RuntimeError("EMAIL_TO não possui nenhum destinatário válido.")
 
-# ============================================================
-# LÓGICA DE DATAS (ACUMULADO DO MÊS)
-# ============================================================
-
 hoje = datetime.now()
 primeiro_dia_mes = hoje.strftime("%Y-%m-01")
-data_hoje_str = hoje.strftime("%Y-%m-%d")
-
-periodo_exibicao = f"01/{hoje.strftime('%m/%Y')} até {hoje.strftime('%d/%m/%Y')}"
-
-# ============================================================
-# 1. BUSCAR TICKETS DO MÊS NO MOVIDESK
-# ============================================================
+periodo_exibicao = f"Acumulado do Mês ({01}/{hoje.strftime('%m/%Y')} a {hoje.strftime('%d/%m/%Y')}) + Passivo Geral de Abertos"
 
 url_tickets = "https://api.movidesk.com/public/v1/tickets"
+
+# ============================================================
+# 1. BUSCAR BUGS DE ALTA PRIORIDADE (ACUMULADO DO MÊS)
+# ============================================================
 
 params_mes = {
     "token": MOVIDESK_TOKEN,
@@ -70,20 +64,15 @@ params_mes = {
 }
 
 try:
-    response_tickets = requests.get(url_tickets, params=params_mes, timeout=30)
-    response_tickets.raise_for_status()
-    tickets_mes = response_tickets.json()
+    response_mes = requests.get(url_tickets, params=params_mes, timeout=30)
+    response_mes.raise_for_status()
+    tickets_mes = response_mes.json()
 except Exception as e:
-    print(f"Erro ao buscar tickets: {e}")
+    print(f"Erro ao buscar tickets do mês: {e}")
     tickets_mes = []
 
 if not isinstance(tickets_mes, list):
     tickets_mes = []
-
-# ============================================================
-# 2. PROCESSAMENTO: BUGS DE ALTA PRIORIDADE POR CLIENTE
-# ============================================================
-# Critérios: Categoria/Assunto indica Bug AND Urgência é "Alta" ou "Urgente"
 
 bugs_alta_prioridade = []
 clientes_bugs_contador = Counter()
@@ -93,14 +82,10 @@ for t in tickets_mes:
     categoria = (t.get("category") or "").lower()
     assunto = (t.get("subject") or "").lower()
     
-    # Identifica se é alta prioridade (Alta ou Urgente)
     eh_alta_prioridade = any(u in urgencia for u in ["alta", "urgente", "high", "urgent"])
-    
-    # Identifica se é bug (pela categoria ou assunto contendo a palavra 'bug')
     eh_bug = "bug" in categoria or "bug" in assunto or "erro" in categoria or "falha" in categoria
     
     if eh_alta_prioridade and eh_bug:
-        # Extrai organização
         organizacao = "Sem Organização"
         for c in t.get("clients", []):
             org = c.get("organization")
@@ -109,44 +94,54 @@ for t in tickets_mes:
                 if nome_org:
                     organizacao = nome_org
                     break
-        
         t["organizacao_nome"] = organizacao
         bugs_alta_prioridade.append(t)
         clientes_bugs_contador[organizacao] += 1
 
-# Ranking de clientes com mais bugs de alta prioridade
 ranking_clientes_bugs = clientes_bugs_contador.most_common()
 
 # ============================================================
-# 3. PROCESSAMENTO: TICKETS EM ABERTO ORDENADOS POR TEMPO
+# 2. BUSCAR TODOS OS TICKETS EM ABERTO (INDEPENDENTE DA DATA)
 # ============================================================
-# Critérios: Status base NÃO pode ser cancelado, fechado ou resolvido
+# Sem filtro de data no $filter para capturar todo o passivo em aberto
+
+params_abertos = {
+    "token": MOVIDESK_TOKEN,
+    "$select": "id,subject,status,category,createdDate,urgency,clients,baseStatus",
+    "$expand": "clients($expand=organization)"
+}
+
+try:
+    response_abertos = requests.get(url_tickets, params=params_abertos, timeout=30)
+    response_abertos.raise_for_status()
+    todos_sistema = response_abertos.json()
+except Exception as e:
+    print(f"Erro ao buscar todos os tickets do sistema: {e}")
+    todos_sistema = []
+
+if not isinstance(todos_sistema, list):
+    todos_sistema = []
 
 tickets_em_aberto = []
-for t in tickets_mes:
+for t in todos_sistema:
     base_status = (t.get("baseStatus") or "").lower()
     status_texto = (t.get("status") or "").lower()
     
-    # Verifica se está fechado/resolvido/cancelado
+    # Exclui fechados, resolvidos ou cancelados
     fechado = any(p in base_status or p in status_texto for p in ["resol", "fech", "cancel", "solved", "closed"])
     
     if not fechado:
-        # Calcula tempo aberto em dias
         created_date_raw = t.get("createdDate")
         if created_date_raw:
             try:
                 dt_criacao = datetime.fromisoformat(created_date_raw.replace("Z", "").split(".")[0])
                 delta = hoje - dt_criacao
                 t["dias_aberto"] = delta.days
-                t["horas_aberto"] = round(delta.total_seconds() / 3600, 1)
             except:
                 t["dias_aberto"] = 0
-                t["horas_aberto"] = 0
         else:
             t["dias_aberto"] = 0
-            t["horas_aberto"] = 0
             
-        # Extrai organização
         organizacao = "Sem Organização"
         for c in t.get("clients", []):
             org = c.get("organization")
@@ -162,7 +157,7 @@ for t in tickets_mes:
 tickets_em_aberto.sort(key=lambda x: x["dias_aberto"], reverse=True)
 
 # ============================================================
-# 4. FUNÇÕES AUXILIARES DE FORMATAÇÃO HTML
+# 3. FUNÇÕES AUXILIARES
 # ============================================================
 
 def esc(value): return html.escape(str(value)) if value is not None else ""
@@ -184,7 +179,7 @@ def urgency_badge(urgency):
     return f'<span class="urgency-normal">{esc(urgency or "Normal")}</span>'
 
 # ============================================================
-# 5. MONTAGEM DO HTML E E-MAIL
+# 4. MONTAGEM DO HTML E E-MAIL
 # ============================================================
 
 html_content = f"""
@@ -227,27 +222,27 @@ ul li {{ margin-bottom: 6px; }}
 <div class="container">
 <div class="header">
     <div class="eyebrow">VIDYA CODE • SUPORTE & ENGENHARIA</div>
-    <h1 class="title">Relatório de Bugs Críticos e Tickets em Aberto</h1>
-    <p class="subtitle">Acumulado do mês de referência: <strong>{esc(periodo_exibicao)}</strong></p>
+    <h1 class="title">Relatório de Bugs Críticos e Passivo de Tickets Abertos</h1>
+    <p class="subtitle">Bugs avaliados no mês • Tickets em aberto considerando <strong>todo o histórico</strong></p>
 </div>
 <div class="content">
 
 <div class="cards">
     <div class="card">
-        <div class="card-label">BUGS DE ALTA / URGENTE</div>
+        <div class="card-label">BUGS DE ALTA / URGENTE (MÊS)</div>
         <div class="card-value" style="color: #b42318;">{len(bugs_alta_prioridade)}</div>
-        <div class="card-detail">No acumulado do mês</div>
+        <div class="card-detail">No acumulado do mês atual</div>
     </div>
     <div class="card">
-        <div class="card-label">TICKETS ABERTOS ATUAIS</div>
+        <div class="card-label">TOTAL DE TICKETS EM ABERTO</div>
         <div class="card-value" style="color: #2457a6;">{len(tickets_em_aberto)}</div>
-        <div class="card-detail">Aguardando resolução</div>
+        <div class="card-detail">Passivo geral em atendimento</div>
     </div>
 </div>
 
 <div class="grid-2">
     <div class="box-panel">
-        <h3>Ranking de Clientes (Bugs de Alta Prioridade)</h3>
+        <h3>Ranking de Clientes (Bugs de Alta Prioridade - Mês)</h3>
         {
             "<ul>" + "".join([f"<li><b>{esc(org)}</b>: {qtd} bug(s) crítico(s)</li>" for org, qtd in ranking_clientes_bugs]) + "</ul>"
             if ranking_clientes_bugs else "<p style='font-size:12px; color:#18794e;'>Nenhum bug de alta prioridade registrado no mês.</p>"
@@ -255,7 +250,7 @@ ul li {{ margin-bottom: 6px; }}
     </div>
 </div>
 
-<div class="section-title">🚨 Relação de Bugs de Alta Prioridade por Cliente</div>
+<div class="section-title">🚨 Relação de Bugs de Alta Prioridade por Cliente (Mês)</div>
 <div class="table-wrapper">
 <table>
 <thead>
@@ -275,7 +270,7 @@ if not bugs_alta_prioridade:
     html_content += """
 <tr>
     <td colspan="6" style="text-align: center; padding: 25px; color: #9ca3af;">
-        Nenhum bug de alta prioridade ou urgente encontrado no período.
+        Nenhum bug de alta prioridade ou urgente encontrado no período do mês.
     </td>
 </tr>
 """
@@ -297,13 +292,13 @@ html_content += f"""
 </table>
 </div>
 
-<div class="section-title">⏳ Tickets em Aberto (Ordenados do Mais Antigo para o Mais Recente)</div>
+<div class="section-title">⏳ Todos os Tickets em Aberto (Ordenados do Mais Antigo para o Mais Recente)</div>
 <div class="table-wrapper">
 <table>
 <thead>
 <tr>
     <th>ID</th>
-    <th>DIAS ABERTO</th>
+    <th>TEMPO EM ABERTO</th>
     <th>ORGANIZAÇÃO</th>
     <th>ASSUNTO</th>
     <th>STATUS</th>
@@ -341,7 +336,7 @@ html_content += """
 
 </div>
 <div class="footer">
-    Relatório Automático de Fricção e Abertos • Movidesk • Vidya Code
+    Relatório Automático • Movidesk • Vidya Code
 </div>
 </div>
 </div>
@@ -350,13 +345,13 @@ html_content += """
 """
 
 # ============================================================
-# 6. ENVIO DO E-MAIL
+# 5. ENVIO DO E-MAIL
 # ============================================================
 
 msg = MIMEMultipart()
 msg["From"] = EMAIL_USER
 msg["To"] = ", ".join(EMAIL_RECIPIENTS)
-msg["Subject"] = f"Relatório Crítico: Bugs de Alta Prioridade e Tickets em Aberto ({periodo_exibicao})"
+msg["Subject"] = f"Relatório Consolidado: Bugs Críticos do Mês e Fila Geral de Abertos"
 
 msg.attach(MIMEText(html_content, "html", "utf-8"))
 
@@ -364,7 +359,6 @@ try:
     with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
         server.login(EMAIL_USER, EMAIL_PASSWORD)
         server.sendmail(EMAIL_USER, EMAIL_RECIPIENTS, msg.as_string())
-    print("E-mail de bugs críticos e abertos enviado com sucesso!")
-    print(f"Destinatários: {', '.join(EMAIL_RECIPIENTS)}")
+    print("E-mail consolidado enviado com sucesso!")
 except Exception as e:
     print(f"Erro ao enviar e-mail: {e}")
