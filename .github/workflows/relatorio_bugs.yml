@@ -1,0 +1,32 @@
+name: Relatório de Bugs Críticos e Tickets Abertos
+
+on:
+  schedule:
+    - cron: '0 8 * * 1-5' # Roda de segunda a sexta às 08:00 UTC
+  workflow_dispatch: # Permite rodar manualmente clicando em um botão
+
+jobs:
+  executar-relatorio:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout do Repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instalar Dependências
+        run: |
+          pip install requests
+
+      - name: Executar Script de Relatório
+        env:
+          MOVIDESK_TOKEN: ${{ secrets.MOVIDESK_TOKEN }}
+          EMAIL_USER: ${{ secrets.EMAIL_USER }}
+          EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+        run: |
+          python scripts/relatorio_bugs_abertos.py
