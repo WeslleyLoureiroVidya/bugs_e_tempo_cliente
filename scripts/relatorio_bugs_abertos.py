@@ -48,7 +48,7 @@ if not EMAIL_RECIPIENTS:
 
 hoje = datetime.now()
 primeiro_dia_mes = hoje.strftime("%Y-%m-01")
-periodo_exibicao = f"Acumulado do Mês ({01}/{hoje.strftime('%m/%Y')} a {hoje.strftime('%d/%m/%Y')}) + Passivo Geral de Abertos"
+periodo_exibicao = f"Acumulado do Mês (01/{hoje.strftime('%m/%Y')} a {hoje.strftime('%d/%m/%Y')}) + Passivo Geral de Abertos"
 
 url_tickets = "https://api.movidesk.com/public/v1/tickets"
 
@@ -103,7 +103,6 @@ ranking_clientes_bugs = clientes_bugs_contador.most_common()
 # ============================================================
 # 2. BUSCAR TODOS OS TICKETS EM ABERTO (INDEPENDENTE DA DATA)
 # ============================================================
-# Sem filtro de data no $filter para capturar todo o passivo em aberto
 
 params_abertos = {
     "token": MOVIDESK_TOKEN,
@@ -127,7 +126,6 @@ for t in todos_sistema:
     base_status = (t.get("baseStatus") or "").lower()
     status_texto = (t.get("status") or "").lower()
     
-    # Exclui fechados, resolvidos ou cancelados
     fechado = any(p in base_status or p in status_texto for p in ["resol", "fech", "cancel", "solved", "closed"])
     
     if not fechado:
@@ -153,7 +151,6 @@ for t in todos_sistema:
         t["organizacao_nome"] = organizacao
         tickets_em_aberto.append(t)
 
-# Ordena do que está há mais tempo aberto para o que está há menos tempo
 tickets_em_aberto.sort(key=lambda x: x["dias_aberto"], reverse=True)
 
 # ============================================================
